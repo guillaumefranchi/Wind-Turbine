@@ -1,5 +1,7 @@
 rm(list=ls())
 
+####--------------------- Fitting the power curve
+
 ###---------------- Libraries
 
 library(dplyr)
