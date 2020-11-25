@@ -9,7 +9,7 @@ library(ggplot2)
 
 df<-read.csv("wind-farm-totalsignals.csv",sep=";")
 
-power<-read.csv("../DATA/Power_curve.csv",sep=",")
+power<-read.csv("Power_curve.csv",sep=",")
 power<-power %>% rename(wind=Wind.speed..m.s.,kW=Power..kW.)
 
 ##---------- Sigmoid model for the power curve
