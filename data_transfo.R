@@ -1,5 +1,7 @@
 rm(list = ls())
 
+#####-------------------- Making one big dataset with years 2016 and 2017
+
 library(dplyr)
 
 ##----------- Importing the data
