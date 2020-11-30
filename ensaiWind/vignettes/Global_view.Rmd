@@ -1,0 +1,195 @@
+---
+title: "Global View"
+author: "Ensai/E-Lab"
+date: "26/11/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r packages, include=FALSE, message=FALSE, warning=FALSE, echo=FALSE}
+library(ensaiWind)
+library(leaflet)
+library(dplyr)
+library(ggplot2)
+library(viridis)
+library(DT)
+```
+
+```{r 00, include = FALSE, message=FALSE, warning=FALSE, echo=FALSE}
+data_path = file.path(system.file(package = "ensaiWind"), "extdata")
+```
+
+# Plant Layout
+
+Please note that **wind-farm-1-locations.csv** represent the coordinates relatively to met mast location.  
+It does not represent real geographical coordinates.
+
+```{r load plant location, include = FALSE, message=FALSE, warning=FALSE, echo=FALSE}
+plant <- read.csv2(file.path(data_path, "wind-farm-1-locations.csv"), header = T, dec = ".", sep = ";") %>%
+  mutate(Name = gsub("Wind Turbine ", "WT", Item),
+         Type = ifelse(Name == "Met Mast", "Met Mast", "Turbine")) %>%
+  tidyr::separate(`Relative.Location`, c("Xcoord", "Ycoord"), sep = ",") %>%
+  dplyr::select(Name, Type, Xcoord, Ycoord)
+```
+
+Just to have an idea of plant layout.  
+
+```{r plant layout, include = TRUE, message=FALSE, warning=FALSE, echo=FALSE, fig.width=12}
+ggplot(plant, aes(Xcoord, Ycoord, label = Name)) +
+  geom_point(aes(colour = Type)) +
+  labs(title = "Plant layout",
+       caption = "Ensai/E-Lab",
+       x = 'X coordinates (relative to met mast)',
+       y = 'Y coordinates (relative to met mast)') +
+  geom_text(aes(label=Name),hjust=0, vjust=0) + 
+  theme(axis.text.x = element_text(size=6, angle=45))
+  
+```
+
+# Data power curve
+
+Table **Power_curve.csv**
+
+```{r load data power curve, include = FALSE, message=FALSE, warning=FALSE, echo=FALSE}
+pc <- read.csv2(file.path(data_path, "Power_curve.csv"), header = T, dec = ".", sep = ",") %>%
+  rename(Ws = `Wind.speed..m.s.`,
+         Power = `Power..kW.`)
+```
+
+After a quick look at that theorical power curve it seems that cut-in wind speed is 4m/s and cut-off is 25m/s.
+
+```{r plot theorical power curve, include = TRUE, message=FALSE, warning=FALSE, echo=FALSE}
+ggplot(pc, aes(x = Ws, y = Power)) +
+  geom_point() +
+  labs(title = "Theorical Power Curve",
+       caption = "Ensai/E-Lab",
+       x = 'Wind Speed (m/s)',
+       y = 'Power (kW)')
+```
+
+
+# Data wind production {.tabset .tabset-pills}
+
+## Data availability {.tabset .tabset-pills}
+
+Data: **data_wind_prod.csv**
+
+```{r load data wind prod, include = FALSE, message=FALSE, warning=FALSE, echo=FALSE}
+prod <- read.csv2(file.path(data_path, "data_wind_prod.csv"), header = T, dec = ".", sep = ";") %>%
+  mutate(Timestamp = paste0(substr(Timestamp, 1, 10), " ", substr(Timestamp, 12, 19)),
+         Datetime = as.POSIXct(Timestamp, "%Y-%m-%d %H:%M:%S"),
+         Year_Month = format(Datetime, "%Y_%m"))
+```
+
+**To do:** correct more precisely datetime
+
+```{r get time range, include = FALSE, message=FALSE, warning=FALSE, echo=FALSE}
+time_seq <- data.frame(dt_full = seq.POSIXt(min(prod$Datetime), max(prod$Datetime), by = "10 min"))
+
+
+dt_full = seq.POSIXt(min(prod$Datetime), max(prod$Datetime), by = "10 min")
+turbine = unique(prod$Turbine_ID)
+
+prod_full = as.data.frame(expand.grid(dt_full, turbine)) %>%
+  rename(dt_full = "Var1",
+         Turbine = "Var2") %>%
+  left_join(prod, by = c("dt_full" = "Datetime", "Turbine" = "Turbine_ID")) %>%
+  mutate(Year_Month = format(dt_full, "%Y_%m"))
+```
+
+```{r compute na, include = FALSE, message=FALSE, warning=FALSE, echo=FALSE}
+data_na = prod_full %>%
+  dplyr::select(-c(dt_full, Timestamp)) %>%
+  group_by(Turbine, Year_Month) %>%
+  summarise_all(~sum(is.na(.))) %>%
+  ungroup()
+
+nb_Divisor <- as.symbol("nb_value")
+
+data_comp = prod_full %>%
+  group_by(Turbine, Year_Month) %>%
+  summarize(nb_value = n()) %>%
+  ungroup() %>%
+  left_join(data_na, by = c("Turbine" = "Turbine", "Year_Month" = "Year_Month")) %>%
+  mutate(across(-c(Turbine, Year_Month), ~ . / !! nb_Divisor)) %>%
+  data.frame()
+
+data_heatmap = data_comp %>%
+  dplyr::select(-nb_value) %>%
+  tidyr::gather(Feature, Na_pct, -c(Turbine, Year_Month))
+```
+
+### Turbine T01
+
+```{r ws data availability T01, include=TRUE, message = FALSE, echo = FALSE, warning = FALSE, fig.width=14, fig.height=12}
+heatmap_na("T01")
+```
+
+### Turbine T06
+
+```{r ws data availability T06, include=TRUE, message = FALSE, echo = FALSE, warning = FALSE, fig.width=14, fig.height=12}
+heatmap_na("T06")
+```
+
+### Turbine T07
+
+```{r ws data availability T07, include=TRUE, message = FALSE, echo = FALSE, warning = FALSE, fig.width=14, fig.height=12}
+heatmap_na("T07")
+```
+
+### Turbine T11
+
+```{r ws data availability T11, include=TRUE, message = FALSE, echo = FALSE, warning = FALSE, fig.width=14, fig.height=12}
+heatmap_na("T11")
+```
+
+## Classical relationships {.tabset .tabset-pills}
+
+
+### Power curve: Power ~ Wind Speed
+
+```{r plot obs power curve , include = TRUE, message=FALSE, warning=FALSE, echo=FALSE}
+ggplot(prod, aes(x = Amb_WindSpeed_Avg, y = Prod_LatestAvg_ActPwrGen1)) +
+  geom_point(aes(colour = `Turbine_ID`), alpha = 0.4) +
+  labs(title = "Active Power Gen1 vs. Amb Wind Speed",
+       caption = "Ensai/E-Lab",
+       x = 'Wind Speed (m/s)',
+       y = 'Power (kW)') + 
+  guides(colour = guide_legend(override.aes = list(alpha = 1))) + 
+  theme_minimal() +
+  facet_wrap(~Year_Month)
+```
+
+
+**TO DO** plot the other relationships 
+
+# Data failures {.tabset .tabset-pills}
+
+```{r load data failure, include = FALSE, message=FALSE, warning=FALSE, echo=FALSE}
+failure2016 <- read.csv2(file.path(data_path, "htw-failures-2016.csv"), header = T, dec = ".", sep = ";") %>%
+  mutate(Timestamp = paste0(substr(Timestamp, 1, 10), " ", substr(Timestamp, 12, 19)),
+         Datetime = as.POSIXct(Timestamp, "%Y-%m-%d %H:%M:%S"),
+         Year_Month = format(Datetime, "%Y_%m")) %>%
+  rename(Turbine_ID = `ï..Turbine_ID`)
+failure2017 <- read.csv2(file.path(data_path, "htw-failures-2017.csv"), header = T, dec = ".", sep = ";") %>%
+  mutate(Timestamp = paste0(substr(Timestamp, 1, 10), " ", substr(Timestamp, 12, 19)),
+         Datetime = as.POSIXct(Timestamp, "%Y-%m-%d %H:%M:%S"),
+         Year_Month = format(Datetime, "%Y_%m"))
+
+failure = rbind(failure2016, failure2017)
+
+```
+
+## Number of failure by component
+
+```{r failure by turbine and component, include = TRUE, message=FALSE, warning=FALSE, echo=FALSE}
+failure_turbine_component = failure %>%
+  group_by(Turbine_ID, Component) %>%
+  summarize(total_failure_by_turb_comp = n()) %>%
+  ungroup()
+
+datatable(failure_turbine_component)
+```
