@@ -166,14 +166,48 @@ ggplot(prod, aes(x = Amb_WindSpeed_Avg, y = Prod_LatestAvg_ActPwrGen1)) +
 
 **TO DO** plot the other relationships 
 
+```{r}
+#-- Correlation between variables. We use a correlation matrix between Prod_LatestAvg_ActPwrGen1 variable and all the rest
+prod_corr = prod %>% 
+  select(-c("Timestamp", "Turbine_ID", "Datetime", "Year_Month"))
+
+#-- check types of variables and make sure they are all numerical
+unique(sapply(prod_corr, class))
+
+#-- Build correlation dataframe with filter
+correlation_df = cor(prod_corr, prod_corr$Prod_LatestAvg_ActPwrGen1) %>% 
+  as.data.frame() %>%
+  na.omit() %>%
+  rename(R_coef = V1) 
+
+correlation_df = correlation_df %>%
+  mutate(Variable = rownames(correlation_df),
+         R2_coef = R_coef**2) %>%
+  filter(R2_coef > 0.5)
+
+
+head(correlation_df,40)
+
+ggplot(correlation_df, aes(x=reorder(Variable, -R2_coef), y = R2_coef, fill = R2_coef)) + 
+  geom_bar(stat="identity", fill="steelblue") + 
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(title = "R2 Correlation of variables against Active Power Gen 1",
+         x = "Variables",
+         y = "R2 coefficient") +
+  geom_hline(yintercept=0.5, linetype="dashed", color = "red") + 
+  geom_hline(yintercept=0.75, linetype="dashed", color = "red")
+```
+
+
 # Data failures {.tabset .tabset-pills}
 
 ```{r load data failure, include = FALSE, message=FALSE, warning=FALSE, echo=FALSE}
 failure2016 <- read.csv2(file.path(data_path, "htw-failures-2016.csv"), header = T, dec = ".", sep = ";") %>%
   mutate(Timestamp = paste0(substr(Timestamp, 1, 10), " ", substr(Timestamp, 12, 19)),
          Datetime = as.POSIXct(Timestamp, "%Y-%m-%d %H:%M:%S"),
-         Year_Month = format(Datetime, "%Y_%m")) %>%
-  rename(Turbine_ID = `ï..Turbine_ID`)
+         Year_Month = format(Datetime, "%Y_%m"))
+
 failure2017 <- read.csv2(file.path(data_path, "htw-failures-2017.csv"), header = T, dec = ".", sep = ";") %>%
   mutate(Timestamp = paste0(substr(Timestamp, 1, 10), " ", substr(Timestamp, 12, 19)),
          Datetime = as.POSIXct(Timestamp, "%Y-%m-%d %H:%M:%S"),
