@@ -1,0 +1,106 @@
+---
+title: "Anomaly Isolation"
+output: html_notebook
+---
+
+# Local Density-Based outlier detection
+
+We will explore the 2016 production data
+
+```{r}
+library(ensaiWind)
+library(ldbod)
+library(tidyr)
+library(tidyverse)
+library(lubridate)
+```
+
+```{r}
+#-- define data path in the ensai library
+data_path = file.path(system.file(package = "ensaiWind"), "extdata")
+
+#-- load the 2016 production data
+data_2016 = read.csv2(file.path(data_path, "wind-farm-1-signals-2016.csv"), header = T, dec = ".", sep = ";") %>%
+  mutate(Timestamp = paste0(substr(Timestamp, 1, 10), " ", substr(Timestamp, 12, 19)),
+         Datetime = as.POSIXct(Timestamp, "%Y-%m-%d %H:%M:%S"),
+         Year_Month = format(Datetime, "%Y_%m"))
+
+#-- load the 2016 failure data
+failure2016 <- read.csv2(file.path(data_path, "htw-failures-2016.csv"), header = T, dec = ".", sep = ";") %>%
+  mutate(Timestamp = paste0(substr(Timestamp, 1, 10), " ", substr(Timestamp, 12, 19)),
+         Datetime = as.POSIXct(Timestamp, "%Y-%m-%d %H:%M:%S"))
+
+
+```
+
+```{r}
+#-- group number of failures by turbine and by component
+failure_turbine_component = failure2016 %>%
+  group_by(Turbine_ID, Component) %>%
+  summarize(total_failure_by_turb_comp = n()) %>%
+  ungroup()
+
+data.frame(failure_turbine_component)
+failure2016
+```
+
+From an initial analysis, we can tell that the component that fails the most if the generator in turbine T06. It happened between June and November. We will isolate this turbine in this period and check for outliers using the local density based outlier detection
+```{r}
+head(data_2016[,c(1:4,84:85)])
+```
+
+```{r}
+#-- Isolating turbine T06 between the months of June and November (06-11)
+data_2016$Timestamp = ymd_hms(data_2016$Timestamp)
+df_2016_T06 = filter(data_2016, Turbine_ID == "T06", 
+                     Timestamp >= as.POSIXct("2016-06-01 12:00:00") & 
+                       Timestamp <= as.POSIXct("2016-11-01 12:00:00"))
+
+#-- plot one of the temperature variables
+ggplot(df_2016_T06, aes(x=Timestamp, y = Gen_Bear_Temp_Avg)) + geom_line() + theme_bw()
+```
+
+```{r}
+#-- applying the ldob function to compute outlier scores using neighborhood size of 50
+scores = ldbod(df_2016_T06[,names(df_2016_T06)=="Gen_Bear_Temp_Avg"], k=50)
+
+top2outliers = df_2016_T06[order(scores$lof,decreasing=TRUE)[1:20],names(df_2016_T06)=="Gen_Bear_Temp_Avg"]
+top2outliers
+t1 = df_2016_T06[which(df_2016_T06$Gen_Bear_Temp_Avg == max(top2outliers)),"Timestamp"]
+t2 = df_2016_T06[which(df_2016_T06$Gen_Bear_Temp_Avg == min(top2outliers)),"Timestamp"]
+
+f = failure2016 %>%
+  filter(Turbine_ID == "T06") %>%
+  select(Timestamp) %>%
+  mutate(Timestamp = ymd_hms(Timestamp))
+
+f
+
+
+ggplot(df_2016_T06, aes(x=Timestamp, y = Gen_Bear_Temp_Avg)) + geom_line() + theme_bw() +
+  annotate(geom="point", x=c(median(t2),median(t1)), y=unique(top2outliers), size=3, shape=21, fill="red") #+
+  #geom_vline(xintercept = f, linetype="dotted", color = "blue", size=1.5)
+
+```
+
+The model identified two outliers for this specific model. Temperature = 205 and temperature = 22.
+
+**SHOULD WE REPEAT THAT FOR ALL VARIABLES ??**
+
+# Anomaly Detection
+
+Using Twitter's anomaly detection package
+
+```{r}
+library(AnomalyDetection)
+class(test$Datetime)
+test = df_2016_T06[, c("Datetime", "Gen_Bear_Temp_Avg")]
+test$Datetime = as.POSIXct(date(test$Datetime))
+
+res = AnomalyDetectionTs(test, max_anoms=0.02, direction='both', plot=TRUE)
+res$plot
+
+data("raw_data")
+head(raw_data)
+```
+
