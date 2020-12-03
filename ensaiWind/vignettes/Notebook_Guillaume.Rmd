@@ -1,0 +1,185 @@
+---
+title: "Wind Turbines Notebook"
+author: "Guillaume Franchi"
+output:
+  html_notebook:
+    number_sections: no
+urlcolor: blue
+---
+
+# Importation of some packages used
+
+```{r,echo=FALSE}
+library(dplyr)
+library(plyr)
+library(plotly)
+library(gridExtra)
+library(stringr)
+library(ensaiWind)
+library(lubridate)
+library(GGally)
+```
+
+# Data exploration
+
+## Data Path
+
+We specify the data path in the project :
+
+```{r}
+data_path = file.path(system.file(package = "ensaiWind"), "extdata")
+```
+
+
+## Importation of the data
+
+We first select some data which might have been rearranged in the file `datatransfo.R`.
+All the data (2016 and 2017) are gathered into the same data frame for the failures and met mast data.
+
+We first import the failures.
+
+```{r}
+failures<-read.csv2(file.path(data_path,"total-failures.csv"),sep=";")
+failures<- failures %>% arrange(Turbine_ID)
+```
+
+We import here the totality of the signals, for 2016 and 2017 :
+
+```{r}
+signals.2016<-read.csv(file.path(data_path,"wind-farm-1-signals-2016.csv"),sep=";")
+signals.2016$Timestamp<-as.POSIXct(signals.2016$Timestamp,format="%Y-%m-%dT%H:%M:%S")
+signals.2016$Turbine_ID<-as.factor(signals.2016$Turbine_ID)
+
+signals.2017<-read.csv(file.path(data_path,"data_wind_prod.csv"),sep=";")
+signals.2017$Timestamp<-as.POSIXct(signals.2017$Timestamp,format="%Y-%m-%dT%H:%M:%S")
+signals.2017$Turbine_ID<-as.factor(signals.2017$Turbine_ID)
+```
+
+## Focus on the production
+
+We will simply plot the data of production according to different variables for oth years 2016 and 2017. The function `plot.bymonth` that we created will simplify things.
+
+### According to the windspeed
+
+We select only the variables `Amb_WindSpeed_Avg` and `Prod_LatestAvg_TotActPwr`.
+
+```{r}
+plot.bymonth(signals.2016,"Amb_WindSpeed_Avg","Prod_LatestAvg_TotActPwr")
+```
+
+```{r}
+plot.bymonth(signals.2017,"Amb_WindSpeed_Avg","Prod_LatestAvg_TotActPwr")
+```
+
+
+### According to the ambient temperature
+
+We select only the variables `Amb_Temp_Avg` and `Prod_LatestAvg_TotActPwr`.
+
+```{r}
+plot.bymonth(signals.2016,"Amb_Temp_Avg","Prod_LatestAvg_TotActPwr")
+```
+
+
+```{r}
+plot.bymonth(signals.2017,"Amb_Temp_Avg","Prod_LatestAvg_TotActPwr")
+```
+
+There is no visible effect here.
+
+### According to the generator bearing temperature
+
+We select the variables `Gen_Bear_Temp_Avg` and `Prod_LatestAvg_TotActPwr`.
+
+```{r}
+plot.bymonth(signals.2016,"Gen_Bear_Temp_Avg","Prod_LatestAvg_TotActPwr")
+```
+
+```{r}
+plot.bymonth(signals.2017,"Gen_Bear_Temp_Avg","Prod_LatestAvg_TotActPwr")
+```
+
+## Focus on the Rotor Rpm
+
+### According to the windspeed
+
+We select only the variables `Amb_WindSpeed_Avg` and `Rtr_RPM_Avg`.
+
+```{r}
+plot.bymonth(signals.2016,"Amb_WindSpeed_Avg","Rtr_RPM_Avg")
+```
+
+```{r}
+plot.bymonth(signals.2017,"Amb_WindSpeed_Avg","Rtr_RPM_Avg")
+```
+
+
+### According to the ambient temperature
+
+We select only the variables `Amb_Temp_Avg` and `Rtr_RPM_Avg`.
+
+```{r}
+plot.bymonth(signals.2016,"Amb_Temp_Avg","Rtr_RPM_Avg")
+```
+
+```{r}
+plot.bymonth(signals.2017,"Amb_Temp_Avg","Rtr_RPM_Avg")
+```
+
+No visible effect.
+
+## Focus on the generator RPM
+
+### According to the windspeed
+
+We select only the variables `Amb_WindSpeed_Avg` and `Gen_RPM_Avg`.
+
+```{r}
+plot.bymonth(signals.2016,"Amb_WindSpeed_Avg","Gen_RPM_Avg")
+```
+
+```{r}
+plot.bymonth(signals.2017,"Amb_WindSpeed_Avg","Gen_RPM_Avg")
+```
+
+### According to the ambient temperature
+
+We select the variables `Amb_Temp_Avg` and `Gen_RPM_Avg`.
+
+```{r}
+plot.bymonth(signals.2016,"Amb_Temp_Avg","Gen_RPM_Avg")
+```
+
+```{r}
+plot.bymonth(signals.2017,"Amb_Temp_Avg","Gen_RPM_Avg")
+```
+
+
+Still no visible effect for the ambient temperature.
+
+## Correlation between variables
+
+We want to find correlation between variables. In order to simplify the data, we will only select the average.
+
+```{r}
+df<-read.csv(file.path(data_path,"wind-farm-totalsignals.csv"),sep=";")
+df.sel<- df %>% select(Gen_RPM_Avg,Gen_Phase1_Temp_Avg,Hyd_Oil_Temp_Avg,Gear_Oil_Temp_Avg,Gear_Bear_Temp_Avg,Nac_Temp_Avg,Rtr_RPM_Avg,Amb_WindSpeed_Avg,Amb_Temp_Avg,Prod_LatestAvg_TotActPwr,HVTrafo_Phase1_Temp_Avg,HVTrafo_Phase2_Temp_Avg,HVTrafo_Phase3_Temp_Avg,Cont_VCP_WtrTemp_Avg,Grd_Prod_Pwr_Avg,Gen_Bear2_Temp_Avg)
+
+cor.mat<-cor(df.sel)
+```
+
+```{r}
+cor.mat
+```
+
+```{r}
+df<-read.csv(file.path(data_path,"wind-farm-1-signals-2016.csv"),sep = ";")
+df<-df[which(month(df$Timestamp)==1),]
+df.sel<- df %>% select(Gen_RPM_Avg,Gen_Phase1_Temp_Avg,Hyd_Oil_Temp_Avg,Gear_Oil_Temp_Avg,Gear_Bear_Temp_Avg,Nac_Temp_Avg,Rtr_RPM_Avg,Amb_WindSpeed_Avg,Amb_Temp_Avg,Prod_LatestAvg_TotActPwr,HVTrafo_Phase1_Temp_Avg,HVTrafo_Phase2_Temp_Avg,HVTrafo_Phase3_Temp_Avg,Cont_VCP_WtrTemp_Avg,Grd_Prod_Pwr_Avg,Gen_Bear2_Temp_Avg)
+```
+
+```{r,message=FALSE}
+ggpairs(df.sel)
+```
+
+
