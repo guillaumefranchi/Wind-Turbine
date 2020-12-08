@@ -15,7 +15,7 @@ library(tidyverse)
 library(lubridate)
 ```
 
-```{r}
+```{r, warning=FALSE}
 #-- define data path in the ensai library
 data_path = file.path(system.file(package = "ensaiWind"), "extdata")
 
@@ -28,12 +28,17 @@ data_2016 = read.csv2(file.path(data_path, "wind-farm-1-signals-2016.csv"), head
 #-- load the 2016 failure data
 failure2016 <- read.csv2(file.path(data_path, "htw-failures-2016.csv"), header = T, dec = ".", sep = ";") %>%
   mutate(Timestamp = paste0(substr(Timestamp, 1, 10), " ", substr(Timestamp, 12, 19)),
-         Datetime = as.POSIXct(Timestamp, "%Y-%m-%d %H:%M:%S"))
-
-
+         Datetime = as.POSIXct(Timestamp, "%Y-%m-%d %H:%M:%S")) %>%
+  rename("Turbine_ID" = "ï..Turbine_ID")
 ```
 
-```{r}
+
+```{r, warning=FALSE}
+head(data_2016)
+head(failure2016)
+```
+
+```{r, warning=FALSE}
 #-- group number of failures by turbine and by component
 failure_turbine_component = failure2016 %>%
   group_by(Turbine_ID, Component) %>%
@@ -41,7 +46,7 @@ failure_turbine_component = failure2016 %>%
   ungroup()
 
 data.frame(failure_turbine_component)
-failure2016
+
 ```
 
 From an initial analysis, we can tell that the component that fails the most if the generator in turbine T06. It happened between June and November. We will isolate this turbine in this period and check for outliers using the local density based outlier detection
@@ -74,33 +79,132 @@ f = failure2016 %>%
   select(Timestamp) %>%
   mutate(Timestamp = ymd_hms(Timestamp))
 
-f
-
 
 ggplot(df_2016_T06, aes(x=Timestamp, y = Gen_Bear_Temp_Avg)) + geom_line() + theme_bw() +
-  annotate(geom="point", x=c(median(t2),median(t1)), y=unique(top2outliers), size=3, shape=21, fill="red") #+
-  #geom_vline(xintercept = f, linetype="dotted", color = "blue", size=1.5)
+  annotate(geom="point", x=c(median(t2),median(t1)), y=unique(top2outliers), size=3, shape=21, fill="red")
 
 ```
 
 The model identified two outliers for this specific model. Temperature = 205 and temperature = 22.
+However, this is not the best approach because we look at the variable as a function of the timeseries so it is still in dimension one. Therefore, we need to look at it from multiple dimensions. We will try the first three dimensions
 
-**SHOULD WE REPEAT THAT FOR ALL VARIABLES ??**
+```{r, warning=FALSE}
+#-- choosing three variables; 
+ggplot(df_2016_T06, aes(x=Timestamp, y = Gen_Bear_Temp_Avg)) + geom_line() + theme_bw()
+ggplot(df_2016_T06, aes(x=Timestamp, y = Gen_RPM_Avg)) + geom_line() + theme_bw()
+ggplot(df_2016_T06, aes(x=Timestamp, y = Gear_Oil_Temp_Avg)) + geom_line() + theme_bw()
+```
+```{r}
+#-- detecting outliers in all dimensions
+df_test = df_2016_T06[,names(df_2016_T06)==c("Gen_Bear_Temp_Avg","Gen_RPM_Avg", "Gear_Oil_Temp_Avg")]
+scores = ldbod(df_test, k=20)
+```
+
+```{r, warning=FALSE}
+# local reachabiility density and robust kernel density factor
+lrd = scores$lrd
+rkof = scores$rkof
+apply(df_test[order(scores$lof,decreasing=TRUE)[1:50],], 2, unique)
+```
+
+Detecting outliers in many dimensions of df_2016_T06 data 
+*for some reason i could not feed it the whole data frame even if all variables are numeric*
+
+```{r}
+#-- compute outliers
+df_test_2 = df_2016_T06[,c(3:25)]
+scores_all = ldbod(df_test_2, k=20)
+
+#-- get unique values of the outliers
+apply(df_test_2[order(scores_all$lof,decreasing=TRUE)[1:5],], 2, unique)
+```
+
+**Questions :**
+
+* Are these really outliers? 
+* What dimensions should we consider when checking for outliers? 
+* What do we do with them if they really are considered outliers? 
+
+```{r}
+head(df_2016_T06)
+```
 
 # Anomaly Detection
 
 Using Twitter's anomaly detection package
 
-```{r}
+## SH-ESD (Seasonal Hybrid Extreme Studentized Deviate)
+
+```{r,warning=FALSE}
+#-- testing the anomaly detection function with the variable Amb_Temp_Avg
 library(AnomalyDetection)
-class(test$Datetime)
-test = df_2016_T06[, c("Datetime", "Gen_Bear_Temp_Avg")]
-test$Datetime = as.POSIXct(date(test$Datetime))
-
-res = AnomalyDetectionTs(test, max_anoms=0.02, direction='both', plot=TRUE)
-res$plot
-
-data("raw_data")
-head(raw_data)
+AnomalyDetectionVec(df_2016_T06[,"Amb_Temp_Avg"], max_anoms=0.2, period=1440, direction='both', plot=TRUE)$plot
 ```
 
+Testing anomalies for the generator related variables.We know that the generator failed multiple times between June and October.
+We will do anomaly detection for the variables related to the generator and get the dates in which the anomalies happened to compare with actual failure dates.
+Said variables are located in the columns 3 through 10. For variables 3 through 6 i could not plot the results.
+
+```{r}
+#-- for some reason, a loop did not work.
+a_1 = AnomalyDetectionVec(df_2016_T06[,"Gen_Bear_Temp_Avg"], max_anoms=0.2, period=1440, direction='both', plot=TRUE)
+#a_2 = AnomalyDetectionVec(df_2016_T06[,"Gen_Phase1_Temp_Avg"], max_anoms=0.2, period=1440, direction='both', plot=TRUE)   #this is null
+a_3 = AnomalyDetectionVec(df_2016_T06[,"Gen_Phase2_Temp_Avg"], max_anoms=0.2, period=1440, direction='both', plot=TRUE)   
+a_4 = AnomalyDetectionVec(df_2016_T06[,"Gen_Phase3_Temp_Avg"], max_anoms=0.2, period=1440, direction='both', plot=TRUE)
+#a_5 = AnomalyDetectionVec(df_2016_T06[,"Hyd_Oil_Temp_Avg"], max_anoms=0.2, period=1440, direction='both', plot=TRUE)      #this is null
+
+a_1$plot;a_3$plot;a_4$plot
+```
+
+```{r, warning=FALSE}
+#-- get indices of the anomaly and get the corresponding dates from the data frame
+ind_1 = a_1$anoms[,"index"]
+ind_3 = a_3$anoms[,"index"]
+ind_4 = a_4$anoms[,"index"]
+
+data.frame(Anomaly_dates_Gen_Bear_Temp = df_2016_T06[ind_1, "Timestamp"]) %>% arrange(Anomaly_dates_Gen_Bear_Temp)
+data.frame(Anomaly_dates_Gen_Phase2_Temp_Avg = df_2016_T06[ind_3, "Timestamp"]) %>% arrange(Anomaly_dates_Gen_Phase2_Temp_Avg)
+data.frame(Anomaly_dates_Gen_Phase3_Temp_Avg = df_2016_T06[ind_4, "Timestamp"]) %>% arrange(Anomaly_dates_Gen_Phase3_Temp_Avg)
+```
+
+```{r}
+failure_T06_2016 = filter(failure2016, Turbine_ID == "T06", Component == "GENERATOR") %>% arrange(Datetime)
+failure_T06_2016
+```
+
+## Analysis 
+
+Results of the anomalies detected for the generator temperature sensors are consistent. We get the same points that are detected as anomalies.
+
+On 2016-09-04 at around 8 in the morning the technicien reported "High temperature generator error" which is consistent with the anomaly detected by the model for the variable Gen_Phase2_Temp_Avg. This variable corresponds to one of the three-phase synchronous generator in the Turbine. The model detected this same failure as an anomaly the previous day (2016-09-03 at around 5 pm). Around this time, probably no technician was on site to check the failure which indicates that they would signal it the following morning.
+
+If a three-phase motor is operating and loses one of the phases, the motor will continue to operate at a reduced speed and experience vibrations. The current will also increase considerably in the remaining phases, causing an internal heating of the motor components. 
+To test this theory, we will plot the variable Gen_RPM_Max for the window of failure (from 2016-09-03 12 AM to 2016-09-04 05 PM). As we can see, indeed the rotation speed of the generator dropped down to about 45 RPM but did not reach 0.
+
+```{r}
+df_rpm = filter(df_2016_T06, Timestamp >= as.POSIXct("2016-09-03 12:00:00") & 
+                       Timestamp <= as.POSIXct("2016-09-04 05:00:00")) %>% select(Timestamp, Gen_RPM_Max) %>% arrange(Timestamp)
+
+ggplot(df_rpm, aes(x=Timestamp, y=Gen_RPM_Max)) + geom_line() + theme_bw()
+```
+
+## Traceback to other components
+
+Now that we narrowed our timewindow to a certain failure, we will try to trace it back to other components to get the root cause (if different from the phase3 generator). To do so, we will filter the dataset keeping only temperature related variables and the timestamp.
+
+```{r,fig.width=14, fig.height=12, warning=FALSE}
+df_error = filter(df_2016_T06, 
+                  Timestamp >= as.POSIXct("2016-09-03 12:00:00") &
+                  Timestamp <= as.POSIXct("2016-09-04 05:00:00")) %>%
+  select(Timestamp, contains("Temp_Avg")) %>%
+  arrange(Timestamp)
+
+library(plotly)
+df_plot = gather(df_error, Variable, Value, -Timestamp)
+
+P = plot_ly(df_plot, x = ~Timestamp, y=~Value, color = ~Variable, type = 'scatter', mode = 'lines' )
+P %>% add_trace(x =as.POSIXct("2016-09-03 16:20:00"), type = 'scatter', mode = 'lines' ,name = 'Failure', color = I("black"))
+
+```
+
+We dont see any other peak in temperatures indicating any abnormal behavior of other components in the turbine. Therefore, the root cause might be the Generator phase 2 alone.
